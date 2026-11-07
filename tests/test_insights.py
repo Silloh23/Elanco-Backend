@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from tickwatch.api.app import create_app
 from tickwatch.services.ingestion import ingest
+from tickwatch.services.insights import chi_square_monthly_test
 
 
 def _sighting(
@@ -32,6 +33,23 @@ def _client_with_rows(tmp_path, rows: list[dict[str, str]]) -> TestClient:
 
     ingest(FixtureClient(), database_path)
     return TestClient(create_app(database_path))
+
+
+def test_monthly_chi_square_distinguishes_flat_and_seasonal_series() -> None:
+    flat = [{"period": f"2024-{month:02d}-01", "count": 100} for month in range(1, 13)]
+    seasonal = [
+        {"period": f"2024-{month:02d}-01", "count": 500 if month == 7 else 1}
+        for month in range(1, 13)
+    ]
+    flat_result = chi_square_monthly_test(flat)
+    seasonal_result = chi_square_monthly_test(seasonal)
+    assert flat_result is not None
+    assert flat_result["degrees_of_freedom"] == 11
+    assert flat_result["p_value"] > 0.05
+    assert flat_result["verdict"] == "no statistically significant seasonality at 5%"
+    assert seasonal_result is not None
+    assert seasonal_result["p_value"] < 0.05
+    assert seasonal_result["verdict"] == "statistically significant seasonality at 5%"
 
 
 def test_monthly_anomaly_and_forecast_return_clear_sparse_data_guard(
@@ -99,7 +117,11 @@ def test_seasonality_averages_zero_months_and_applies_optional_filters(
     }
     assert items[1]["average_count"] == 0.0
     assert items[11]["average_count"] == 0.5
+    assert response.json()["goodness_of_fit"]["degrees_of_freedom"] == 11
+    assert response.json()["goodness_of_fit"]["p_value"] < 0.05
 
     city_only = client.get("/insights/seasonality", params={"city": "London"})
     assert city_only.status_code == 200
     assert city_only.json()["items"][0]["average_count"] == 1.0
+    assert city_only.json()["goodness_of_fit"] is None
+    assert city_only.json()["reason"] == "requires_coverage_of_all_calendar_months"

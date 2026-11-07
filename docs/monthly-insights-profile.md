@@ -55,3 +55,18 @@ Each cell is the mean number of sightings in that calendar month across 13 years
 | Southampton | 109 / 156 | 69.9% |
 
 Overall monthly means range from 5.08 in May to 7.69 in December, with no consistent broad seasonal curve. Species means show different modest peaks. City series are particularly sparse: 57.7%–69.9% of months are zero, so city-specific seasonal patterns are not reliable evidence of underlying risk.
+
+## Days-weighted chi-square test
+
+The null hypothesis is that the daily sighting rate is equal across calendar months. Expected counts are proportional to the number of days in each covered month, including leap days. The test uses 11 degrees of freedom when the series covers all 12 calendar months.
+
+| Series | Chi-square | df | p-value | Verdict at 5% |
+|---|---:|---:|---:|---|
+| Overall | 11.1421 | 11 | 0.4314 | No statistically significant seasonality |
+| Fox/badger tick | 12.9725 | 11 | 0.2951 | No statistically significant seasonality |
+| Marsh tick | 7.6143 | 11 | 0.7474 | No statistically significant seasonality |
+| Passerine tick | 7.1665 | 11 | 0.7854 | No statistically significant seasonality |
+| Southern rodent tick | 23.0110 | 11 | 0.0176 | Statistically significant seasonality |
+| Tree-hole tick | 10.7733 | 11 | 0.4625 | No statistically significant seasonality |
+
+The Southern rodent tick result is significant before adjusting for the five species comparisons. The test assumes independent counts and does not model changing reporting effort or clustering; treat it as descriptive evidence only.

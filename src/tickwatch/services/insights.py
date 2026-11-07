@@ -3,9 +3,14 @@
 import calendar
 from collections.abc import Sequence
 from datetime import datetime
+from math import exp, lgamma, log
 from statistics import mean, pstdev
 
 MIN_NON_ZERO_POINTS = 9
+SIGNIFICANCE_LEVEL = 0.05
+GAMMA_EPSILON = 1e-12
+GAMMA_FLOOR = 1e-300
+GAMMA_MAX_ITERATIONS = 1000
 
 
 def non_zero_point_count(counts: Sequence[int]) -> int:
@@ -45,6 +50,97 @@ def month_of_year_averages(
             }
         )
     return result
+
+
+def chi_square_monthly_test(
+    rows: Sequence[dict[str, int | str]],
+) -> dict[str, float | int | bool | str] | None:
+    """Test uniform daily sighting rates across covered calendar months."""
+    if not rows:
+        return None
+    parsed = [datetime.fromisoformat(str(row["period"])) for row in rows]
+    start = min(parsed).year * 12 + min(parsed).month - 1
+    end = max(parsed).year * 12 + max(parsed).month - 1
+    counts = {
+        datetime.fromisoformat(str(row["period"])).year * 12
+        + datetime.fromisoformat(str(row["period"])).month
+        - 1: int(row["count"])
+        for row in rows
+    }
+    observed = [0] * 12
+    exposure_days = [0] * 12
+    for index in range(start, end + 1):
+        year, month = divmod(index, 12)
+        month += 1
+        observed[month - 1] += counts.get(index, 0)
+        exposure_days[month - 1] += calendar.monthrange(year, month)[1]
+    active_months = [month for month in range(12) if exposure_days[month] > 0]
+    total = sum(observed)
+    if total == 0 or len(active_months) < 12:
+        return None
+    total_days = sum(exposure_days)
+    expected = [total * exposure_days[month] / total_days for month in active_months]
+    chi2 = sum(
+        (observed[month] - expected[index]) ** 2 / expected[index]
+        for index, month in enumerate(active_months)
+    )
+    degrees_of_freedom = len(active_months) - 1
+    p_value = _chi_square_survival(chi2, degrees_of_freedom)
+    significant = p_value < SIGNIFICANCE_LEVEL
+    verdict = (
+        "statistically significant seasonality at 5%"
+        if significant
+        else "no statistically significant seasonality at 5%"
+    )
+    return {
+        "chi2": round(chi2, 4),
+        "degrees_of_freedom": degrees_of_freedom,
+        "p_value": p_value,
+        "significant": significant,
+        "verdict": verdict,
+    }
+
+
+def _chi_square_survival(chi2: float, degrees_of_freedom: int) -> float:
+    """Calculate a chi-square upper-tail probability using regularized gamma Q."""
+    return _regularized_gamma_q(degrees_of_freedom / 2, chi2 / 2)
+
+
+def _regularized_gamma_q(shape: float, value: float) -> float:
+    """Evaluate the regularized upper incomplete gamma function numerically."""
+    if value == 0:
+        return 1.0
+    factor = exp(-value + shape * log(value) - lgamma(shape))
+    if value < shape + 1:
+        term = total = 1 / shape
+        current_shape = shape
+        for _ in range(GAMMA_MAX_ITERATIONS):
+            current_shape += 1
+            term *= value / current_shape
+            total += term
+            if abs(term) < abs(total) * GAMMA_EPSILON:
+                break
+        return min(1.0, max(0.0, 1 - total * factor))
+
+    offset = value + 1 - shape
+    coefficient = 1 / GAMMA_FLOOR
+    denominator = 1 / offset if abs(offset) >= GAMMA_FLOOR else 1 / GAMMA_FLOOR
+    fraction = denominator
+    for index in range(1, GAMMA_MAX_ITERATIONS + 1):
+        term = -index * (index - shape)
+        offset += 2
+        denominator = term * denominator + offset
+        if abs(denominator) < GAMMA_FLOOR:
+            denominator = GAMMA_FLOOR
+        coefficient = offset + term / coefficient
+        if abs(coefficient) < GAMMA_FLOOR:
+            coefficient = GAMMA_FLOOR
+        denominator = 1 / denominator
+        delta = denominator * coefficient
+        fraction *= delta
+        if abs(delta - 1) < GAMMA_EPSILON:
+            break
+    return min(1.0, max(0.0, factor * fraction))
 
 
 def anomaly_points(

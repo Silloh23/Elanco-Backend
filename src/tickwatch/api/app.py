@@ -16,6 +16,7 @@ from tickwatch.services.analytics import filter_sql
 from tickwatch.services.insights import (
     MIN_NON_ZERO_POINTS,
     anomaly_points,
+    chi_square_monthly_test,
     month_of_year_averages,
     non_zero_point_count,
     seasonal_forecast,
@@ -310,11 +311,19 @@ def create_app(database_path: str | None = None) -> FastAPI:
         )
         connection.close()
         monthly_rows = _fill_gaps(rows, "monthly")
+        goodness_of_fit = chi_square_monthly_test(monthly_rows)
         return {
             "city": city,
             "species": species,
             "items": month_of_year_averages(monthly_rows),
-            "reason": "no_sightings" if not monthly_rows else None,
+            "goodness_of_fit": goodness_of_fit,
+            "reason": (
+                "no_sightings"
+                if not monthly_rows
+                else "requires_coverage_of_all_calendar_months"
+                if goodness_of_fit is None
+                else None
+            ),
         }
 
     return application
