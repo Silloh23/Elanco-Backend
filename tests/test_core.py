@@ -13,18 +13,18 @@ def test_clean_record_normalizes_and_deduplicates() -> None:
         {
             "date": "2026-01-01",
             "id": "fixture-one",
-            "latinName": "Ixodes ricinus",
-            "location": "  north  west",
-            "species": " Ixodes   ricinus ",
+            "latinName": "Ixodes apronophorus",
+            "location": "  manchester  ",
+            "species": " Marsh   tick ",
         }
     )
     second = clean_record(
         {
             "observed_at": "2026-01-01T00:00:00Z",
             "id": "fixture-one",
-            "latinName": "Ixodes ricinus",
-            "location": "North West",
-            "species": "Ixodes ricinus",
+            "latinName": "Ixodes apronophorus",
+            "location": "Manchester",
+            "species": "Marsh tick",
         }
     )
     assert first == second
@@ -77,9 +77,9 @@ def test_source_client_list_response_and_retries() -> None:
             {
                 "id": "fixture-one",
                 "date": "2026-01-01T00:00:00",
-                "latinName": "Ixodes ricinus",
-                "location": "Kent",
-                "species": "Ixodes ricinus",
+                "latinName": "Ixodes apronophorus",
+                "location": "Manchester",
+                "species": "Marsh tick",
             }
         ]
         return httpx.Response(200, json=records)
@@ -103,9 +103,9 @@ def test_ingest_idempotency_and_quarantine(tmp_path) -> None:
     valid = {
         "id": "fixture-one",
         "date": "2026-01-01",
-        "latinName": "Ixodes ricinus",
-        "location": "Kent",
-        "species": "Ixodes ricinus",
+        "latinName": "Ixodes apronophorus",
+        "location": "Manchester",
+        "species": "Marsh tick",
     }
 
     class FixtureClient:
@@ -136,9 +136,9 @@ def test_failed_ingestion_marks_run_failed(tmp_path) -> None:
                 {
                     "id": "fixture-one",
                     "date": "2026-01-01",
-                    "latinName": "Ixodes ricinus",
-                    "location": "Kent",
-                    "species": "Ixodes ricinus",
+                    "latinName": "Ixodes apronophorus",
+                    "location": "Manchester",
+                    "species": "Marsh tick",
                 }
             ]
             raise UpstreamAPIError("offline")

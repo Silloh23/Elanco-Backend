@@ -85,3 +85,10 @@ class SightingRepository:
             (sighting_id,),
         ).fetchone()
         return dict(row) if row else None
+
+    def distinct_species_count(self) -> int:
+        """Return the number of observed species for multiple-test correction."""
+        row = self.connection.execute(
+            "SELECT COUNT(DISTINCT species) FROM sightings"
+        ).fetchone()
+        return int(row[0])

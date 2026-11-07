@@ -1,64 +1,87 @@
 # TickWatch
 
-A small backend MVP for collecting UK tick reports, retaining invalid source rows for review, and serving location, time, species, and trend queries. It supports public health awareness but does not diagnose disease or predict individual risk.
+Author: Hollis
+
+TickWatch ingests tick sightings from the Elanco student API into SQLite and serves searchable counts, trends, anomaly flags, forecasts, and seasonal summaries. It is an educational data project, not medical advice.
 
 ## Quickstart
 
-1. Install Python 3.12 and uv.
-2. Run uv sync --extra dev.
-3. Start the API with make run and open http://127.0.0.1:8000/docs.
-4. Run make test and make lint.
-5. Configure TICKWATCH_API_URL if the upstream URL differs, then run make ingest.
+Run these five commands from the repository root:
+
+1. `uv sync --extra dev`
+2. `make lint`
+3. `make test`
+4. `make ingest`
+5. `make run`
+
+The API listens on `http://127.0.0.1:8000`. Open `http://127.0.0.1:8000/docs` for interactive documentation. Stop the server with Ctrl+C.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| TICKWATCH_API_URL | https://dev-task.elancoapps.com/data/tick-sightings | Source sightings list URL |
-| TICKWATCH_DATABASE_PATH | tickwatch.db | SQLite file path |
-| TICKWATCH_REQUEST_TIMEOUT | 10 | HTTP timeout seconds |
-| TICKWATCH_RETRY_ATTEMPTS | 3 | Bounded transient-error attempts |
-| TICKWATCH_ANOMALY_Z_THRESHOLD | 2 | Positive rolling z-score threshold |
-| TICKWATCH_CORS_ORIGINS | empty | Comma-separated allowed browser origins |
+| `TICKWATCH_API_URL` | `https://dev-task.elancoapps.com/data/tick-sightings` | Source list endpoint |
+| `TICKWATCH_DATABASE_PATH` | `tickwatch.db` | SQLite file path |
+| `TICKWATCH_PORT` | `8000` | Local development server port |
+| `TICKWATCH_REQUEST_TIMEOUT` | `10` | HTTP timeout in seconds |
+| `TICKWATCH_RETRY_ATTEMPTS` | `3` | Attempts for transient upstream errors |
+| `TICKWATCH_ANOMALY_Z_THRESHOLD` | `2` | Rolling anomaly z-score threshold |
+| `TICKWATCH_CORS_ORIGINS` | empty | Comma-separated allowed browser origins |
 
 ## Endpoints
 
-- GET /health
-- GET /sightings?start_date=2022-01-01&end_date=2024-12-31&region=Manchester&species=Marsh%20tick&limit=50&offset=0
-- GET /sightings/{id}
-- GET /analytics/by-region?start_date=2022-01-01&species=Marsh%20tick
-- GET /analytics/trends?granularity=weekly&region=Manchester&species=Marsh%20tick
-- GET /analytics/by-species
-- GET /insights/anomalies?region=Manchester&granularity=monthly
-- GET /insights/forecast?region=Manchester&granularity=monthly
-- GET /insights/seasonality?city=Manchester&species=Marsh%20tick
+The examples below assume the server is running and the database has been ingested.
 
-All endpoints have executable examples in Swagger at /docs. Query validation errors use a stable error envelope.
+```bash
+curl http://127.0.0.1:8000/health
+curl 'http://127.0.0.1:8000/sightings?region=Manchester&limit=25&offset=0'
+curl http://127.0.0.1:8000/sightings/02WNholuSg6ndCk4c1dA
+curl 'http://127.0.0.1:8000/analytics/by-region?species=Marsh%20tick'
+curl http://127.0.0.1:8000/analytics/by-species
+curl 'http://127.0.0.1:8000/analytics/trends?granularity=monthly&region=Manchester&species=Marsh%20tick'
+curl 'http://127.0.0.1:8000/insights/anomalies?region=Manchester'
+curl 'http://127.0.0.1:8000/insights/forecast?region=Manchester'
+curl 'http://127.0.0.1:8000/insights/seasonality?city=Manchester&species=Southern%20rodent%20tick'
+```
+
+Anomaly and forecast routes default to monthly periods; add `granularity=weekly` to request weekly results. Both require at least nine non-zero periods and return HTTP 422 with `error.code=insufficient_data` below that threshold. Seasonality averages each calendar month over the covered years, weights its chi-square null by month length, and adjusts per-species verdicts with Bonferroni correction. Per-species results include `adjusted_alpha` and `significant_after_adjustment`.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  API[FastAPI routes] --> S[Services]
+  API[FastAPI endpoints] --> S[Services]
   S --> R[Typed repositories]
   R --> DB[(SQLite)]
   S --> C[httpx source client]
-  C --> U[Source API]
+  C --> U[Elanco source API]
 ```
 
 ```mermaid
 flowchart LR
-  F[Fetch source list] --> CL[Clean and normalize]
-  CL --> D[Unique-key dedupe]
-  D --> ST[Store in batches]
-  CL -->|invalid raw record| Q[Quarantine]
-  ST --> SV[Search and aggregate]
+  F[Fetch full source list] --> V[Validate and normalize]
+  V --> D[Deduplicate by source ID]
+  D --> B[Commit batches]
+  V -->|invalid row| Q[Quarantine raw payload and reason]
+  B --> A[Search and aggregate]
+  A --> I[Insights and seasonality]
 ```
 
-## Data and limitations
+## Verified source and real findings
 
-The live source is `https://dev-task.elancoapps.com/data/tick-sightings`; it returns 1,000 records in one unpaged JSON array. The source has city names but no coordinates, so location queries and analytics use `location` as the normalized `region` and do not offer radius searches. Each observation's source `id` is retained, and `latinName` is stored as `latin_name`. See [docs/api-findings.md](docs/api-findings.md) for verified routes and [docs/monthly-insights-profile.md](docs/monthly-insights-profile.md) for month-of-year counts and sparsity. Anomaly and forecast endpoints use monthly periods by default; pass `granularity=weekly` for weekly periods. They require at least 9 non-zero periods and return HTTP 422 with `error.code=insufficient_data` when the series is too sparse. Seasonality reports average counts by calendar month and a chi-square test against a days-in-month-weighted uniform null. The test assumes independent counts and does not adjust for reporting effort or clustering. SQLite is suitable for a local MVP, not concurrent high-volume ingestion. The forecast is a short naive baseline, not a predictive model. No clinical advice should be inferred.
+The real list route is `https://dev-task.elancoapps.com/data/tick-sightings`. It returns 1,000 records in one unpaged array; `limit` and `offset` are ignored. The captured data has five non-null string fields, no duplicate `(date, city, species)` tuples, and a date range from 2012-01-03 through 2024-12-30. Source dates lack timezone offsets and are interpreted as UTC. The source provides city names but no coordinates, so radius searches are not supported.
 
-## Tests and roadmap
+The overall days-weighted month test found no statistically significant seasonality (`p=0.4314`). Southern rodent tick had an unadjusted `p=0.0176`, but did not pass the five-species Bonferroni threshold (`alpha=0.01`). See [the full monthly profile](docs/monthly-insights-profile.md), [data quality report](docs/data-quality-report.md), and [API discovery notes](docs/api-findings.md).
 
-Tests use deterministic local fixtures and never contact the upstream. With more time: validate the source contract against live data, add scheduled ingestion, move to Postgres for concurrent scale, cache common aggregates, add auth and rate limits, compare richer forecasting methods, add deployment and monitoring, and extend CI with coverage and security checks.
+## Validation tools
+
+- `make demo-quarantine` ingests five malformed examples into a temporary SQLite DB and prints the reason codes with preserved payloads.
+- With the API running and data ingested, `uv run python scripts/endpoint_smoke.py --output docs/endpoint-smoke.md` sends a valid and invalid request to each API route.
+- `bash scripts/fresh_clone_check.sh` clones the committed repository into a temporary directory and runs the quickstart, ingestion, and endpoint curls.
+- `scripts/reconcile_upstream.py` compares local total, city, and species counts to the live service.
+
+## Limitations and next steps
+
+The real API gives no pagination, coordinates, or reporting-effort metadata. The chi-square test assumes independent counts, equal daily reporting opportunity, and an adequate covered span; repeated observations and temporal clustering can overstate significance. The per-species adjustment handles the five current species, but the observed crosswalk can change. Nine non-zero periods are only a minimum data gate, not a guarantee of a reliable forecast or anomaly score. SQLite is suitable for this small MVP, not concurrent high-volume ingestion.
+
+With more time, I would track reporting effort, evaluate seasonality over multiple years with time-series methods, add source-provided pagination or incremental updates, and deploy with monitoring and automated data-quality alerts. I would also revisit the species crosswalk whenever the upstream taxonomy changes.

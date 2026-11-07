@@ -16,9 +16,8 @@ def main() -> None:
     )
     try:
         configure_logging()
-        logging.getLogger("tickwatch.ingest").info(
-            "ingestion_complete", extra=ingest(client, settings.database_path)
-        )
+        summary = ingest(client, settings.database_path)
+        logging.getLogger("tickwatch.ingest").info("ingestion_complete %s", summary)
     finally:
         client.close()
 

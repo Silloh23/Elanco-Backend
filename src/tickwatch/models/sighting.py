@@ -93,6 +93,8 @@ def clean_record(raw: dict[str, Any]) -> Sighting:
         raise ValidationFailure("invalid_date") from error
     region = _category_value(region_value, SOURCE_LOCATIONS, "location")
     species = _category_value(species_value, set(SPECIES_TO_LATIN_NAME), "species")
+    if species not in SPECIES_TO_LATIN_NAME:
+        raise ValidationFailure("unknown_species")
     latin_name = _category_value(
         latin_name_value, set(SPECIES_TO_LATIN_NAME.values()), "latin_name"
     )

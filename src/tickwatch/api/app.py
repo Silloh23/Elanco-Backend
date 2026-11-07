@@ -15,6 +15,7 @@ from tickwatch.repositories.sightings import SightingRepository
 from tickwatch.services.analytics import filter_sql
 from tickwatch.services.insights import (
     MIN_NON_ZERO_POINTS,
+    SIGNIFICANCE_LEVEL,
     anomaly_points,
     chi_square_monthly_test,
     month_of_year_averages,
@@ -304,14 +305,39 @@ def create_app(database_path: str | None = None) -> FastAPI:
             values.append(species)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         connection = connect(path)
-        rows = SightingRepository(connection).analytics(
+        repository = SightingRepository(connection)
+        rows = repository.analytics(
             "SELECT strftime('%Y-%m-01', observed_at) AS period, COUNT(*) AS count "
             f"FROM sightings{where} GROUP BY period ORDER BY period",
             values,
         )
+        species_test_count = repository.distinct_species_count()
         connection.close()
         monthly_rows = _fill_gaps(rows, "monthly")
         goodness_of_fit = chi_square_monthly_test(monthly_rows)
+        if species is not None and goodness_of_fit is not None:
+            adjusted_alpha = SIGNIFICANCE_LEVEL / species_test_count
+            significant_after_adjustment = (
+                float(goodness_of_fit["p_value"]) < adjusted_alpha
+            )
+            verdict = str(goodness_of_fit["verdict"])
+            if (
+                bool(goodness_of_fit["significant"])
+                and not significant_after_adjustment
+            ):
+                verdict = (
+                    "statistically significant before Bonferroni correction, "
+                    "but not after correction at 5%"
+                )
+            elif significant_after_adjustment:
+                verdict = "statistically significant after Bonferroni correction at 5%"
+            goodness_of_fit = {
+                **goodness_of_fit,
+                "adjusted_alpha": adjusted_alpha,
+                "significant_after_adjustment": significant_after_adjustment,
+                "species_test_count": species_test_count,
+                "verdict": verdict,
+            }
         return {
             "city": city,
             "species": species,

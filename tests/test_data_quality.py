@@ -4,6 +4,7 @@ import logging
 
 import pytest
 
+from scripts.demo_quarantine import bad_records
 from scripts.profile_data import profile
 from tickwatch.core.exceptions import ValidationFailure
 from tickwatch.models.sighting import clean_record
@@ -49,6 +50,7 @@ def test_known_categories_normalize_case_and_whitespace() -> None:
             _record("mismatch", latin_name="Ixodes canisuga"),
             "species_latin_name_mismatch",
         ),
+        (_record("unknown", species="Uncatalogued pest"), "unknown_species"),
     ],
 )
 def test_likely_spelling_and_taxonomy_mismatch_are_rejected(
@@ -103,3 +105,29 @@ def test_ingest_quarantines_bad_categories_and_flags_content_duplicates(
         "quarantined": 2,
     }
     assert "duplicate_content_tuple" in caplog.text
+
+
+def test_quarantine_demo_records_keep_raw_payloads_and_reason_codes(tmp_path) -> None:
+    import json
+    import sqlite3
+
+    records = bad_records()
+
+    class FixtureClient:
+        def pages(self):
+            yield records
+
+    database_path = str(tmp_path / "quarantine-demo.db")
+    summary = ingest(FixtureClient(), database_path)
+    connection = sqlite3.connect(database_path)
+    rows = connection.execute("SELECT reason, raw_payload FROM quarantine").fetchall()
+    connection.close()
+    reason_by_id = {json.loads(payload)["id"]: reason for reason, payload in rows}
+    assert summary["quarantined"] == 5
+    assert reason_by_id == {
+        "bad-date": "invalid_date",
+        "missing-species": "missing_species",
+        "unknown-species": "unknown_species",
+        "species-latin-mismatch": "species_latin_name_mismatch",
+        "empty-city": "missing_region",
+    }

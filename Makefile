@@ -1,4 +1,4 @@
-.PHONY: run test lint ingest
+.PHONY: run test lint ingest demo-quarantine
 run:
 	uv run python -m tickwatch
 
@@ -10,3 +10,6 @@ lint:
 
 ingest:
 	uv run python -m tickwatch.ingest
+
+demo-quarantine:
+	uv run python scripts/demo_quarantine.py
