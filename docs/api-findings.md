@@ -1,13 +1,34 @@
-# API discovery findings
+# Live API findings
 
-## Probe status
+## Discovery
 
-The configured source is `https://dev-task.elancoapps.com/`. From this workspace, DNS lookup fails (`curl: (6) Could not resolve host`). The browsing tool also reports the host inaccessible. Therefore no HTTP response, docs, endpoint list, headers, or sample records could be observed. No live API facts are inferred or fabricated.
+The root URL serves a client-rendered Next.js documentation shell. Its `/docs` and `/openapi.json` paths return 404. `__ENV.js` sets `REACT_APP_API_URL` to `https://dev-task.elancoapps.com/api-service` and sets authentication to `true`; direct requests to that prefix returned 404. The page's `index-63e8627b3ab3ed26.js` chunk embeds an OpenAPI 3.0.3 document whose server is `/data`. That document says all routes are public GET requests and require no key. Direct probes confirmed the API is served from `https://dev-task.elancoapps.com/data` without an auth header.
 
-## Current integration contract
+All five candidate spec paths (`/openapi.json`, `/swagger.json`, `/api-docs`, `/api/openapi.json`, `/v1/openapi.json`) returned 404 both under `/api-service` and under `/data`. The spec embedded in the page bundle is therefore the available route description.
 
-The client requests the configured base URL and accepts either a JSON list, an object containing `results`/`data`/`items`, or a single record object. It follows a response `next` URL if present, otherwise increments an `offset` parameter when `count` indicates more records. This is a provisional compatibility strategy, not verified source behavior. Endpoint path, auth, pagination, rate limits, field schema, volume, and response shape must be verified when the host is reachable.
+## Verified endpoint contract
 
-## Data quality evidence
+| Request | Status | Body shape and observation |
+|---|---:|---|
+| `GET /data/` | 200 | `{"message": "Welcome to the Tick Sightings API"}` |
+| `GET /data/health` | 200 | `{"status": "healthy"}` |
+| `GET /data/stats` | 200 | `{"api_version": "1.0.0", "total_sightings": 1000}` |
+| `GET /data/tick-sightings` | 200 | Array of 1,000 sighting objects |
+| `GET /data/tick-sightings/{sighting_id}` | 200 for known ID | One sighting object |
+| `GET /data/tick-sightings/does-not-exist` | 404 | `{"error": "Not found"}` |
+| `GET /data/tick-sightings/city/Manchester` | 200 | Array of 72 sightings |
+| `GET /data/tick-sightings/species/Marsh%20tick` | 200 | Array of 186 sightings |
 
-Live sample count: 0 (source unreachable). Missing/null fields, duplicates, format inconsistencies, outliers and their frequencies cannot be measured. Ingestion quarantines unrecognized or invalid records with the raw JSON and reason to prevent silent data loss. The cleaner supports common date, region, species, and coordinate field aliases pending schema confirmation.
+The list endpoint has no documented paging parameters. Requests with `limit=50&offset=0`, `limit=50&offset=475`, and `limit=50&offset=950` each returned the same 1,000 rows; the server ignores those parameters. Ingestion therefore makes one request and consumes the complete returned array.
+
+List records have exactly five fields: `id`, `date`, `latinName`, `location`, and `species`. All are non-null strings in the observed dataset. The `date` values are ISO-like timestamps without an offset; ingestion treats these naive values as UTC when normalizing. No coordinates or severity field are provided.
+
+## Data profile
+
+Run `python scripts/profile_data.py` to profile the saved raw list response. The captured response contains 1,000 rows, 1,000 distinct IDs, zero nulls, and a date range of `2012-01-03T20:40:43` to `2024-12-30T04:32:12`.
+
+Distinct categories: 5 species, 5 Latin names, and 14 locations. Species counts are Fox/badger tick 210, Marsh tick 186, Passerine tick 226, Southern rodent tick 192, and Tree-hole tick 186. The complete field frequency profile is in the script output.
+
+## Samples
+
+Raw response bodies and request/status notes are in [`samples/README.md`](samples/README.md). The three paging probes are retained separately even though the upstream returned identical full arrays. The list endpoint's source IDs are kept as local primary keys; fallback hashing is used only when an ID is missing.

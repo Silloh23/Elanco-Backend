@@ -18,8 +18,19 @@ class SightingRepository:
         """Insert a batch idempotently and return inserted and duplicate counts."""
         before = self.connection.total_changes
         self.connection.executemany(
-            "INSERT OR IGNORE INTO sightings VALUES (?, ?, ?, ?, ?, ?)",
-            [(x.id, x.observed_at, x.region, x.species, x.latitude, x.longitude) for x in batch],
+            """INSERT OR IGNORE INTO sightings
+               (id, observed_at, region, species, latin_name)
+               VALUES (?, ?, ?, ?, ?)""",
+            [
+                (
+                    x.id,
+                    x.observed_at,
+                    x.region,
+                    x.species,
+                    x.latin_name,
+                )
+                for x in batch
+            ],
         )
         inserted = self.connection.total_changes - before
         self.connection.commit()
@@ -33,11 +44,16 @@ class SightingRepository:
         )
         self.connection.commit()
 
-    def list_sightings(self, where: str, values: list[Any], limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
+    def list_sightings(
+        self, where: str, values: list[Any], limit: int, offset: int
+    ) -> tuple[list[dict[str, Any]], int]:
         """Return one stable page and total for a validated filter expression."""
-        total = self.connection.execute(f"SELECT COUNT(*) FROM sightings {where}", values).fetchone()[0]
+        total = self.connection.execute(
+            f"SELECT COUNT(*) FROM sightings {where}", values
+        ).fetchone()[0]
         rows = self.connection.execute(
-            f"SELECT * FROM sightings {where} ORDER BY observed_at, id LIMIT ? OFFSET ?",
+            f"""SELECT id, observed_at, region, species, latin_name FROM sightings
+                {where} ORDER BY observed_at, id LIMIT ? OFFSET ?""",
             [*values, limit, offset],
         ).fetchall()
         return [dict(row) for row in rows], int(total)
@@ -46,7 +62,26 @@ class SightingRepository:
         """Run a fixed repository-owned aggregate query."""
         return [dict(row) for row in self.connection.execute(sql, values).fetchall()]
 
+    def reconciliation_aggregates(self) -> dict[str, Any]:
+        """Return local totals grouped by city and species for source comparison."""
+        total = self.connection.execute("SELECT COUNT(*) FROM sightings").fetchone()[0]
+        cities = self.analytics(
+            "SELECT region, COUNT(*) AS count FROM sightings GROUP BY region", []
+        )
+        species = self.analytics(
+            "SELECT species, COUNT(*) AS count FROM sightings GROUP BY species", []
+        )
+        return {
+            "total": int(total),
+            "cities": {row["region"]: int(row["count"]) for row in cities},
+            "species": {row["species"]: int(row["count"]) for row in species},
+        }
+
     def by_id(self, sighting_id: str) -> dict[str, Any] | None:
         """Look up one sighting by its stable identifier."""
-        row = self.connection.execute("SELECT * FROM sightings WHERE id = ?", (sighting_id,)).fetchone()
+        row = self.connection.execute(
+            """SELECT id, observed_at, region, species, latin_name
+               FROM sightings WHERE id = ?""",
+            (sighting_id,),
+        ).fetchone()
         return dict(row) if row else None

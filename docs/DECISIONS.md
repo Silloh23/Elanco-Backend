@@ -1,9 +1,9 @@
 # Decisions
 
 - **Stack:** FastAPI, Pydantic, httpx and stdlib sqlite3 follow the task's fixed, explainable stack. Repositories isolate SQL so a future Postgres migration does not affect services.
-- **Source assumptions:** Live API discovery was impossible because this execution environment could not resolve the host. The base URL is configurable; response pagination and field aliases are provisional and documented in `api-findings.md`.
-- **Dedupe key:** SHA-256 over canonical UTC timestamp, normalized region, normalized species, and rounded coordinates. Upstream IDs are preferred when present. Since no sample data was available, this natural-key choice is a defensible fallback and may merge genuinely separate sightings with identical reported values.
-- **Cleaning:** Normalize common date formats to UTC; lowercase/trim/collapse whitespace in species and region; validate UK coordinate envelope. Preserve all rejected raw payloads in quarantine.
+- **Source contract:** The client targets the verified `/data/tick-sightings` list, which returns the full list in one response and ignores offset/limit parameters. The client is kept configurable in case the upstream route changes.
+- **Dedupe key:** Keep the source `id` as the primary key. If a record has no ID, hash its normalized UTC date, location, species, and Latin name. This fallback can merge indistinguishable reports.
+- **Cleaning:** Map `date`, `location`, and `latinName` to the local observed time, region, and Latin name fields; normalize timestamps to UTC and collapse whitespace while preserving species casing. The source has no coordinate fields, so geographic radius queries are not offered. Preserve rejected raw payloads in quarantine.
 - **Storage:** SQLite for a small MVP with no external service requirement. Its single-writer limits make Postgres preferable at higher ingest concurrency/volume.
 - **SQL:** Parameterized SQL in typed repository classes keeps queries inspectable and avoids ORM indirection.
 - **Indexes:** Date, region, and species indexes support the primary filters and analytics groupings.

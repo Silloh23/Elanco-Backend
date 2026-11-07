@@ -14,7 +14,7 @@ def connect(database_path: str) -> sqlite3.Connection:
         """
         CREATE TABLE IF NOT EXISTS sightings (
             id TEXT PRIMARY KEY, observed_at TEXT NOT NULL, region TEXT NOT NULL,
-            species TEXT NOT NULL, latitude REAL, longitude REAL
+            species TEXT NOT NULL, latin_name TEXT NOT NULL DEFAULT ''
         );
         CREATE TABLE IF NOT EXISTS quarantine (
             id INTEGER PRIMARY KEY, raw_payload TEXT NOT NULL, reason TEXT NOT NULL,
@@ -31,4 +31,11 @@ def connect(database_path: str) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_sightings_species ON sightings(species);
         """
     )
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(sightings)")
+    }
+    if "latin_name" not in columns:
+        connection.execute(
+            "ALTER TABLE sightings ADD COLUMN latin_name TEXT NOT NULL DEFAULT ''"
+        )
     return connection

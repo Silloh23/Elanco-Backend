@@ -14,7 +14,7 @@ A small backend MVP for collecting UK tick reports, retaining invalid source row
 
 | Variable | Default | Purpose |
 |---|---|---|
-| TICKWATCH_API_URL | https://dev-task.elancoapps.com/ | Source API URL |
+| TICKWATCH_API_URL | https://dev-task.elancoapps.com/data/tick-sightings | Source sightings list URL |
 | TICKWATCH_DATABASE_PATH | tickwatch.db | SQLite file path |
 | TICKWATCH_REQUEST_TIMEOUT | 10 | HTTP timeout seconds |
 | TICKWATCH_RETRY_ATTEMPTS | 3 | Bounded transient-error attempts |
@@ -24,10 +24,10 @@ A small backend MVP for collecting UK tick reports, retaining invalid source row
 ## Endpoints
 
 - GET /health
-- GET /sightings?start_date=2026-01-01&end_date=2026-03-01&region=Kent&species=ixodes%20ricinus&limit=50&offset=0
+- GET /sightings?start_date=2022-01-01&end_date=2024-12-31&region=Manchester&species=Marsh%20tick&limit=50&offset=0
 - GET /sightings/{id}
-- GET /analytics/by-region?start_date=2026-01-01&species=ixodes%20ricinus
-- GET /analytics/trends?granularity=weekly&region=Kent&species=ixodes%20ricinus
+- GET /analytics/by-region?start_date=2022-01-01&species=Marsh%20tick
+- GET /analytics/trends?granularity=weekly&region=Manchester&species=Marsh%20tick
 - GET /analytics/by-species
 - GET /insights/anomalies?region=Kent
 - GET /insights/forecast?region=Kent
@@ -47,7 +47,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  F[Fetch page] --> CL[Clean and normalize]
+  F[Fetch source list] --> CL[Clean and normalize]
   CL --> D[Unique-key dedupe]
   D --> ST[Store in batches]
   CL -->|invalid raw record| Q[Quarantine]
@@ -56,7 +56,7 @@ flowchart LR
 
 ## Data and limitations
 
-The upstream host could not be resolved from the implementation environment, so API endpoint behavior, true schema, pagination, data volume, and actual data quality remain unverified. See docs/api-findings.md. The client supports a provisional set of common JSON response shapes. The natural key can collide for indistinguishable reports; an upstream ID is used where present. SQLite is suitable for a local MVP, not concurrent high-volume ingestion. Weekly anomaly scoring needs sufficient history and misses low-count anomalies. The forecast repeats four recent weekly values and is a baseline only. No clinical advice should be inferred.
+The live source is `https://dev-task.elancoapps.com/data/tick-sightings`; it returns 1,000 records in one unpaged JSON array. The source has city names but no coordinates, so location queries and analytics use `location` as the normalized `region` and do not offer radius searches. Each observation's source `id` is retained, and `latinName` is stored as `latin_name`. See [docs/api-findings.md](docs/api-findings.md) for verified routes, request samples, and the profile. SQLite is suitable for a local MVP, not concurrent high-volume ingestion. Weekly anomaly scoring needs sufficient history and misses low-count anomalies. The forecast repeats four recent weekly values and is a baseline only. No clinical advice should be inferred.
 
 ## Tests and roadmap
 

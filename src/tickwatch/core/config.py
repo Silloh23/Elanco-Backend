@@ -1,14 +1,17 @@
 """Application settings loaded from environment variables."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class Settings:
     """Central configuration shared by application layers."""
 
-    api_url: str = os.getenv("TICKWATCH_API_URL", "https://dev-task.elancoapps.com/")
+    api_url: str = os.getenv(
+        "TICKWATCH_API_URL",
+        "https://dev-task.elancoapps.com/data/tick-sightings",
+    )
     database_path: str = os.getenv("TICKWATCH_DATABASE_PATH", "tickwatch.db")
     request_timeout: float = float(os.getenv("TICKWATCH_REQUEST_TIMEOUT", "10"))
     retry_attempts: int = int(os.getenv("TICKWATCH_RETRY_ATTEMPTS", "3"))

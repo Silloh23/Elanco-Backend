@@ -4,11 +4,13 @@ from collections.abc import Sequence
 from statistics import mean, pstdev
 
 
-def anomaly_points(counts: Sequence[int], threshold: float = 2.0, window: int = 8) -> list[dict[str, float | int]]:
+def anomaly_points(
+    counts: Sequence[int], threshold: float = 2.0, window: int = 8
+) -> list[dict[str, float | int]]:
     """Flag observations outside a rolling historical z-score threshold."""
     flags: list[dict[str, float | int]] = []
     for index in range(window, len(counts)):
-        history = counts[max(0, index - window):index]
+        history = counts[max(0, index - window) : index]
         deviation = pstdev(history)
         expected = mean(history)
         if deviation == 0:
@@ -16,7 +18,14 @@ def anomaly_points(counts: Sequence[int], threshold: float = 2.0, window: int = 
         else:
             score = (counts[index] - expected) / deviation
         if score >= threshold:
-            flags.append({"index": index, "count": counts[index], "expected": expected, "z_score": score})
+            flags.append(
+                {
+                    "index": index,
+                    "count": counts[index],
+                    "expected": expected,
+                    "z_score": score,
+                }
+            )
     return flags
 
 

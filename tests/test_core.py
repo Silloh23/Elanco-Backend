@@ -9,8 +9,24 @@ from tickwatch.services.insights import anomaly_points, seasonal_forecast
 
 def test_clean_record_normalizes_and_deduplicates() -> None:
     """Equivalent normalized reports share a deterministic identifier."""
-    first = clean_record({"date": "2026-01-01", "region": "  north  west", "species": " Ixodes   Ricinus "})
-    second = clean_record({"observed_at": "2026-01-01T00:00:00Z", "region": "North West", "species": "ixodes ricinus"})
+    first = clean_record(
+        {
+            "date": "2026-01-01",
+            "id": "fixture-one",
+            "latinName": "Ixodes ricinus",
+            "location": "  north  west",
+            "species": " Ixodes   ricinus ",
+        }
+    )
+    second = clean_record(
+        {
+            "observed_at": "2026-01-01T00:00:00Z",
+            "id": "fixture-one",
+            "latinName": "Ixodes ricinus",
+            "location": "North West",
+            "species": "Ixodes ricinus",
+        }
+    )
     assert first == second
 
 
@@ -20,10 +36,20 @@ def test_clean_record_quarantinable_rejection() -> None:
         clean_record({"region": "Kent", "species": "tick"})
 
 
-def test_coordinates_outside_uk_rejected() -> None:
-    """Coordinate sanity checks reject distant reports."""
-    with pytest.raises(ValidationFailure, match="coordinates_outside_uk"):
-        clean_record({"date": "2026-01-01", "region": "Kent", "species": "tick", "lat": 40, "lon": -70})
+def test_source_location_without_coordinates_is_valid() -> None:
+    """The source provides city names but no latitude or longitude."""
+    record = clean_record(
+        {
+            "id": "source-id",
+            "date": "2026-01-01T00:00:00",
+            "latinName": "Ixodes apronophorus",
+            "location": "Manchester",
+            "species": "Marsh tick",
+        }
+    )
+    assert record.id == "source-id"
+    assert record.region == "Manchester"
+    assert record.latin_name == "Ixodes apronophorus"
 
 
 def test_anomaly_and_forecast_baselines() -> None:
@@ -33,9 +59,10 @@ def test_anomaly_and_forecast_baselines() -> None:
     assert seasonal_forecast([1, 2]) == [1.0, 2.0, 1.0, 2.0]
 
 
-def test_source_client_pagination_and_retries() -> None:
-    """Client streams pages and retries one transient server error."""
+def test_source_client_list_response_and_retries() -> None:
+    """Client retries a transient error and yields the source's list response."""
     import httpx
+
     from tickwatch.clients.source import SourceClient
 
     calls = 0
@@ -45,14 +72,24 @@ def test_source_client_pagination_and_retries() -> None:
         calls += 1
         if calls == 1:
             return httpx.Response(503)
-        offset = int(request.url.params.get("offset", "0"))
-        records = [{"date": f"2026-01-0{offset + 1}", "region": "Kent", "species": "tick"}]
-        return httpx.Response(200, json={"results": records, "count": 2})
+        assert not request.url.params
+        records = [
+            {
+                "id": "fixture-one",
+                "date": "2026-01-01T00:00:00",
+                "latinName": "Ixodes ricinus",
+                "location": "Kent",
+                "species": "Ixodes ricinus",
+            }
+        ]
+        return httpx.Response(200, json=records)
 
-    client = SourceClient("https://unit.test/data", attempts=2,
-                          transport=httpx.MockTransport(handler))
+    client = SourceClient(
+        "https://unit.test/data", attempts=2, transport=httpx.MockTransport(handler)
+    )
     try:
-        assert len(list(client.pages())) == 2
+        assert len(list(client.pages())) == 1
+        assert calls == 2
     finally:
         client.close()
 
@@ -63,7 +100,13 @@ def test_ingest_idempotency_and_quarantine(tmp_path) -> None:
 
     from tickwatch.services.ingestion import ingest
 
-    valid = {"date": "2026-01-01", "region": "Kent", "species": "tick"}
+    valid = {
+        "id": "fixture-one",
+        "date": "2026-01-01",
+        "latinName": "Ixodes ricinus",
+        "location": "Kent",
+        "species": "Ixodes ricinus",
+    }
 
     class FixtureClient:
         def pages(self):
@@ -89,7 +132,15 @@ def test_failed_ingestion_marks_run_failed(tmp_path) -> None:
 
     class BrokenClient:
         def pages(self):
-            yield [{"date": "2026-01-01", "region": "Kent", "species": "tick"}]
+            yield [
+                {
+                    "id": "fixture-one",
+                    "date": "2026-01-01",
+                    "latinName": "Ixodes ricinus",
+                    "location": "Kent",
+                    "species": "Ixodes ricinus",
+                }
+            ]
             raise UpstreamAPIError("offline")
 
     database_path = str(tmp_path / "ticks.db")
@@ -97,5 +148,8 @@ def test_failed_ingestion_marks_run_failed(tmp_path) -> None:
         ingest(BrokenClient(), database_path)
     connection = sqlite3.connect(database_path)
     assert connection.execute("SELECT COUNT(*) FROM sightings").fetchone()[0] == 1
-    assert connection.execute("SELECT status FROM ingestion_runs").fetchone()[0] == "failed"
+    assert (
+        connection.execute("SELECT status FROM ingestion_runs").fetchone()[0]
+        == "failed"
+    )
     connection.close()
