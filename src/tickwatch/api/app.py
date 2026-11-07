@@ -13,6 +13,13 @@ from tickwatch.core.exceptions import NotFound, TickWatchError, UpstreamAPIError
 from tickwatch.repositories.database import connect
 from tickwatch.repositories.sightings import SightingRepository
 from tickwatch.services.analytics import filter_sql
+from tickwatch.services.insights import (
+    MIN_NON_ZERO_POINTS,
+    anomaly_points,
+    month_of_year_averages,
+    non_zero_point_count,
+    seasonal_forecast,
+)
 
 settings = Settings()
 
@@ -203,47 +210,111 @@ def create_app(database_path: str | None = None) -> FastAPI:
         return {"granularity": granularity, "items": _fill_gaps(rows, granularity)}
 
     @application.get("/insights/anomalies")
-    def anomalies(region: str) -> dict[str, Any]:
-        """Flag unusually high weekly counts against the region's prior history."""
-        from tickwatch.services.insights import anomaly_points
-
+    def anomalies(region: str, granularity: str = "monthly") -> Any:
+        """Flag count spikes at monthly resolution, with optional weekly buckets."""
+        if granularity not in {"monthly", "weekly"}:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": {
+                        "code": "validation_error",
+                        "message": "granularity must be monthly or weekly",
+                    }
+                },
+            )
+        bucket = (
+            "strftime('%Y-%W-1', observed_at)"
+            if granularity == "weekly"
+            else "strftime('%Y-%m-01', observed_at)"
+        )
         connection = connect(path)
         rows = SightingRepository(connection).analytics(
-            "SELECT strftime('%Y-%W-1', observed_at) AS week, COUNT(*) AS count FROM sightings WHERE region = ? GROUP BY week ORDER BY week",
+            f"SELECT {bucket} AS period, COUNT(*) AS count FROM sightings WHERE region = ? GROUP BY period ORDER BY period",
             [region],
         )
         connection.close()
+        rows = _fill_gaps(rows, granularity)
         counts = [int(row["count"]) for row in rows]
+        response = _insufficient_data_response(counts, granularity)
+        if response is not None:
+            return response
         points = anomaly_points(counts, settings.anomaly_z_threshold)
         return {
             "region": region,
+            "granularity": granularity,
             "items": [
                 {
-                    "week": rows[int(point["index"])]["week"],
+                    "period": rows[int(point["index"])]["period"],
                     **point,
-                    "explanation": "This week is unusually high compared with recent history.",
+                    "explanation": f"This {granularity[:-2]} is unusually high compared with recent history.",
                 }
                 for point in points
             ],
         }
 
     @application.get("/insights/forecast")
-    def forecast(region: str) -> dict[str, Any]:
-        """Project four weeks using a seasonal naive baseline."""
-        from tickwatch.services.insights import seasonal_forecast
-
+    def forecast(region: str, granularity: str = "monthly") -> Any:
+        """Project four monthly counts, or weekly counts when requested."""
+        if granularity not in {"monthly", "weekly"}:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": {
+                        "code": "validation_error",
+                        "message": "granularity must be monthly or weekly",
+                    }
+                },
+            )
+        bucket = (
+            "strftime('%Y-%W-1', observed_at)"
+            if granularity == "weekly"
+            else "strftime('%Y-%m-01', observed_at)"
+        )
         connection = connect(path)
         rows = SightingRepository(connection).analytics(
-            "SELECT strftime('%Y-%W-1', observed_at) AS week, COUNT(*) AS count FROM sightings WHERE region = ? GROUP BY week ORDER BY week",
+            f"SELECT {bucket} AS period, COUNT(*) AS count FROM sightings WHERE region = ? GROUP BY period ORDER BY period",
             [region],
         )
         connection.close()
+        rows = _fill_gaps(rows, granularity)
         counts = [int(row["count"]) for row in rows]
+        response = _insufficient_data_response(counts, granularity)
+        if response is not None:
+            return response
         return {
             "region": region,
-            "method": "seasonal naive: repeat latest four observed weeks",
-            "limitations": "A simple baseline; it ignores seasonality beyond four weeks and external drivers.",
+            "granularity": granularity,
+            "method": f"naive: repeat latest four observed {granularity} counts",
+            "limitations": "A simple baseline; it ignores external drivers and long-term changes.",
             "forecast": seasonal_forecast(counts),
+        }
+
+    @application.get("/insights/seasonality")
+    def seasonality(
+        city: str | None = None, species: str | None = None
+    ) -> dict[str, Any]:
+        """Average monthly counts by calendar month with optional filters."""
+        clauses, values = [], []
+        if city:
+            clauses.append("region = ?")
+            values.append(city)
+        if species:
+            clauses.append("species = ?")
+            values.append(species)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        connection = connect(path)
+        rows = SightingRepository(connection).analytics(
+            "SELECT strftime('%Y-%m-01', observed_at) AS period, COUNT(*) AS count "
+            f"FROM sightings{where} GROUP BY period ORDER BY period",
+            values,
+        )
+        connection.close()
+        monthly_rows = _fill_gaps(rows, "monthly")
+        return {
+            "city": city,
+            "species": species,
+            "items": month_of_year_averages(monthly_rows),
+            "reason": "no_sightings" if not monthly_rows else None,
         }
 
     return application
@@ -253,8 +324,16 @@ def _fill_gaps(rows: list[dict[str, Any]], granularity: str) -> list[dict[str, A
     """Fill missing periods between first and last observed aggregate bucket."""
     if len(rows) < 2:
         return rows
-    parsed = [datetime.fromisoformat(row["period"]) for row in rows]
-    mapping = {row["period"]: row["count"] for row in rows}
+    parsed = [
+        datetime.strptime(row["period"], "%Y-%W-%w")
+        if granularity == "weekly"
+        else datetime.fromisoformat(row["period"])
+        for row in rows
+    ]
+    mapping = {
+        period.date().isoformat(): row["count"]
+        for period, row in zip(parsed, rows, strict=True)
+    }
     result, current, last = [], min(parsed), max(parsed)
     while current <= last:
         key = current.date().isoformat()
@@ -264,6 +343,27 @@ def _fill_gaps(rows: list[dict[str, Any]], granularity: str) -> list[dict[str, A
         else:
             current = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
     return result
+
+
+def _insufficient_data_response(
+    counts: list[int], granularity: str
+) -> JSONResponse | None:
+    """Return an explanatory 422 when a series has too few non-zero periods."""
+    non_zero = non_zero_point_count(counts)
+    if non_zero >= MIN_NON_ZERO_POINTS:
+        return None
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "insufficient_data",
+                "message": "This insight requires more periods with sightings.",
+                "granularity": granularity,
+                "non_zero_points": non_zero,
+                "minimum_required": MIN_NON_ZERO_POINTS,
+            }
+        },
+    )
 
 
 app = create_app()

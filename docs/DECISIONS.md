@@ -7,5 +7,8 @@
 - **Storage:** SQLite for a small MVP with no external service requirement. Its single-writer limits make Postgres preferable at higher ingest concurrency/volume.
 - **SQL:** Parameterized SQL in typed repository classes keeps queries inspectable and avoids ORM indirection.
 - **Indexes:** Date, region, and species indexes support the primary filters and analytics groupings.
-- **Anomalies:** Rolling mean and population standard deviation produce an understandable z-score; sparse and flat baselines are suppressed to avoid false certainty.
-- **Forecast:** A seasonal naive weekly baseline repeats the most recent four observed weeks. It is a simple reference forecast, not a predictive model.
+- **Insight granularity:** Monthly is the default because the source data spans years and city-level monthly series are already sparse. Weekly remains an explicit option.
+- **Minimum insight data:** Anomaly and forecast routes require at least nine non-zero periods; otherwise they return HTTP 422 with the observed and required counts. Nine provides an eight-period anomaly baseline plus a target period.
+- **Seasonality:** Report mean count for each calendar month over the selected series' covered years, counting missing months inside that range as zero. Months outside its coverage have no average.
+- **Anomalies:** Rolling mean and population standard deviation produce an understandable z-score over the selected monthly or weekly series.
+- **Forecast:** Repeat the latest four observed monthly counts by default, with weekly periods optional. This is a short naive baseline, not a predictive model.

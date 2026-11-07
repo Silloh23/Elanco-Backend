@@ -29,8 +29,9 @@ A small backend MVP for collecting UK tick reports, retaining invalid source row
 - GET /analytics/by-region?start_date=2022-01-01&species=Marsh%20tick
 - GET /analytics/trends?granularity=weekly&region=Manchester&species=Marsh%20tick
 - GET /analytics/by-species
-- GET /insights/anomalies?region=Kent
-- GET /insights/forecast?region=Kent
+- GET /insights/anomalies?region=Manchester&granularity=monthly
+- GET /insights/forecast?region=Manchester&granularity=monthly
+- GET /insights/seasonality?city=Manchester&species=Marsh%20tick
 
 All endpoints have executable examples in Swagger at /docs. Query validation errors use a stable error envelope.
 
@@ -56,7 +57,7 @@ flowchart LR
 
 ## Data and limitations
 
-The live source is `https://dev-task.elancoapps.com/data/tick-sightings`; it returns 1,000 records in one unpaged JSON array. The source has city names but no coordinates, so location queries and analytics use `location` as the normalized `region` and do not offer radius searches. Each observation's source `id` is retained, and `latinName` is stored as `latin_name`. See [docs/api-findings.md](docs/api-findings.md) for verified routes, request samples, and the profile. SQLite is suitable for a local MVP, not concurrent high-volume ingestion. Weekly anomaly scoring needs sufficient history and misses low-count anomalies. The forecast repeats four recent weekly values and is a baseline only. No clinical advice should be inferred.
+The live source is `https://dev-task.elancoapps.com/data/tick-sightings`; it returns 1,000 records in one unpaged JSON array. The source has city names but no coordinates, so location queries and analytics use `location` as the normalized `region` and do not offer radius searches. Each observation's source `id` is retained, and `latinName` is stored as `latin_name`. See [docs/api-findings.md](docs/api-findings.md) for verified routes and [docs/monthly-insights-profile.md](docs/monthly-insights-profile.md) for month-of-year counts and sparsity. Anomaly and forecast endpoints use monthly periods by default; pass `granularity=weekly` for weekly periods. They require at least 9 non-zero periods and return HTTP 422 with `error.code=insufficient_data` when the series is too sparse. Seasonality reports average counts by calendar month over the series' covered years, including zero-count months. SQLite is suitable for a local MVP, not concurrent high-volume ingestion. The forecast is a short naive baseline, not a predictive model. No clinical advice should be inferred.
 
 ## Tests and roadmap
 

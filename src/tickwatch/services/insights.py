@@ -1,7 +1,50 @@
 """Small pure analytics helpers for anomalies and baseline forecasts."""
 
+import calendar
 from collections.abc import Sequence
+from datetime import datetime
 from statistics import mean, pstdev
+
+MIN_NON_ZERO_POINTS = 9
+
+
+def non_zero_point_count(counts: Sequence[int]) -> int:
+    """Count periods with observed events for sparse-series guards."""
+    return sum(count > 0 for count in counts)
+
+
+def month_of_year_averages(
+    rows: Sequence[dict[str, int | str]],
+) -> list[dict[str, int | float | str | None]]:
+    """Average monthly counts for each calendar month across covered years."""
+    if not rows:
+        return []
+    parsed = [datetime.fromisoformat(str(row["period"])) for row in rows]
+    start = min(parsed).year * 12 + min(parsed).month - 1
+    end = max(parsed).year * 12 + max(parsed).month - 1
+    counts = {
+        datetime.fromisoformat(str(row["period"])).year * 12
+        + datetime.fromisoformat(str(row["period"])).month
+        - 1: int(row["count"])
+        for row in rows
+    }
+    result: list[dict[str, int | float | str | None]] = []
+    for month in range(1, 13):
+        eligible = [index for index in range(start, end + 1) if index % 12 + 1 == month]
+        average = (
+            round(sum(counts.get(index, 0) for index in eligible) / len(eligible), 2)
+            if eligible
+            else None
+        )
+        result.append(
+            {
+                "month": month,
+                "month_name": calendar.month_name[month],
+                "average_count": average,
+                "years": len(eligible),
+            }
+        )
+    return result
 
 
 def anomaly_points(
