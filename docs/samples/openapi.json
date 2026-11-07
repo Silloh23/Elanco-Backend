@@ -1,0 +1,380 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Elanco Tick Sightings API",
+    "description": "Read-only API for querying tick sighting records across UK cities.\n\nNo authentication or API key is needed: all endpoints are public `GET` requests, and CORS is enabled so they can be called directly from a browser.\n\nThis is NOT an official API for ticks. It is purely for educational purposes and for the Elanco student placement task for 2026.\n\nFor general enquiries: studentplacements@elancoah.com.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Elanco student placements",
+      "email": "studentplacements@elancoah.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "/data",
+      "description": "Current environment"
+    }
+  ],
+  "tags": [
+    {
+      "name": "General",
+      "description": "Service information"
+    },
+    {
+      "name": "Tick Sightings",
+      "description": "Tick sighting records"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "General"
+        ],
+        "summary": "Welcome endpoint",
+        "operationId": "getRoot",
+        "responses": {
+          "200": {
+            "description": "Welcome message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "General"
+        ],
+        "summary": "Health check endpoint",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "API is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "healthy"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tick-sightings": {
+      "get": {
+        "tags": [
+          "Tick Sightings"
+        ],
+        "summary": "Get all tick sightings",
+        "operationId": "getTickSightings",
+        "responses": {
+          "200": {
+            "description": "List of all tick sightings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TickSighting"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tick-sightings/{sighting_id}": {
+      "get": {
+        "tags": [
+          "Tick Sightings"
+        ],
+        "summary": "Get a specific tick sighting by ID",
+        "operationId": "getTickSighting",
+        "parameters": [
+          {
+            "name": "sighting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique identifier of the sighting (the `id` field)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tick sighting details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TickSighting"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Sighting not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "error": "Not found"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tick-sightings/city/{city}": {
+      "get": {
+        "tags": [
+          "Tick Sightings"
+        ],
+        "summary": "Get tick sightings by city",
+        "operationId": "getTickSightingsByCity",
+        "parameters": [
+          {
+            "name": "city",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "City name. Exact, case-sensitive match on `location` (e.g. London, Manchester, Birmingham)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tick sightings in the city",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TickSighting"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tick-sightings/species/{species}": {
+      "get": {
+        "tags": [
+          "Tick Sightings"
+        ],
+        "summary": "Get tick sightings by species",
+        "operationId": "getTickSightingsBySpecies",
+        "parameters": [
+          {
+            "name": "species",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Species name. Exact, case-sensitive match (e.g. Southern rodent tick, Fox/badger tick). Names containing a slash may be sent raw or URL-encoded (`Fox%2Fbadger%20tick`)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tick sightings of the species",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TickSighting"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats": {
+      "get": {
+        "tags": [
+          "General"
+        ],
+        "summary": "Get API statistics",
+        "operationId": "getStats",
+        "responses": {
+          "200": {
+            "description": "API statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_sightings": {
+                      "type": "integer",
+                      "example": 1000
+                    },
+                    "api_version": {
+                      "type": "string",
+                      "example": "1.0.0"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "TickSighting": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier of the sighting",
+            "example": "Kq3x9ZfV2mTn8aL0pYwB"
+          },
+          "date": {
+            "type": "string",
+            "description": "ISO 8601 date and time of the sighting (YYYY-MM-DDThh:mm:ss)",
+            "example": "2025-08-14T17:30:00"
+          },
+          "location": {
+            "type": "string",
+            "description": "UK city where the tick was sighted",
+            "example": "London"
+          },
+          "species": {
+            "type": "string",
+            "description": "Type of tick species",
+            "example": "Southern rodent tick"
+          },
+          "latinName": {
+            "type": "string",
+            "description": "Latin name of the species",
+            "example": "Ixodes acuminatus"
+          }
+        },
+        "required": [
+          "id",
+          "date",
+          "location",
+          "species",
+          "latinName"
+        ]
+      }
+    }
+  }
+}
