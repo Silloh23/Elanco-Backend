@@ -29,6 +29,13 @@ stop_tree() {
   kill "$parent" 2>/dev/null || true
 }
 
+stop_listener() {
+  local listener_pid
+  for listener_pid in $(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null || true); do
+    kill "$listener_pid" 2>/dev/null || true
+  done
+}
+
 cleanup() {
   if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
     stop_tree "$server_pid"
@@ -111,9 +118,15 @@ else
 fi
 
 stop_tree "$server_pid"
+stop_listener
 wait "$server_pid" 2>/dev/null || true
 server_pid=""
-stopped_status="$(curl -sS --max-time 2 -o /dev/null -w '%{http_code}' "$base_url/health" 2>/dev/null || true)"
+stopped_status="200"
+for _ in $(seq 1 10); do
+  stopped_status="$(curl -sS --max-time 1 -o /dev/null -w '%{http_code}' "$base_url/health" 2>/dev/null || true)"
+  [[ "$stopped_status" != "200" ]] && break
+  sleep 0.2
+done
 if [[ "$stopped_status" != "200" ]]; then
   record_pass "stop server"
 else
