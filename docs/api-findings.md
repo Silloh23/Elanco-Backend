@@ -31,4 +31,4 @@ Distinct categories: 5 species, 5 Latin names, and 14 locations. Species counts 
 
 ## Samples
 
-Raw response bodies and request/status notes are in [`samples/README.md`](samples/README.md). The three paging probes are retained separately even though the upstream returned identical full arrays. The list endpoint's source IDs are kept as local primary keys; fallback hashing is used only when an ID is missing.
+Representative response bodies and request notes are in [`samples/README.md`](samples/README.md). The original 1,000-row response was pruned to a ten-record sample; one paging sample is retained because the first, middle, and last requests returned identical arrays. The list endpoint's source IDs are kept as local primary keys; fallback hashing is used only when an ID is missing.

@@ -1,6 +1,6 @@
 # Data quality report
 
-Profiled 1000 rows from `docs/samples/sightings-all.json`.
+The findings below describe the original 1,000-row API response, profiled before the repository sample was trimmed. `docs/samples/sightings-all.json` now contains only its first 10 records; the current sample cannot reproduce the full profile.
 
 | Issue | Count | Example | Handling rule |
 | --- | --- | --- | --- |
